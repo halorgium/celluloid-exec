@@ -1,5 +1,4 @@
 require 'celluloid'
-require 'celluloid/io'
 require 'childprocess'
 
 $DEBUG = true
@@ -11,9 +10,9 @@ module Celluloid
       klass.mailbox_class Mailbox
     end
 
-    class Mailbox < IO::Mailbox
+    class Mailbox < EventedMailbox
       def initialize
-        super Reactor.new
+        super Reactor
       end
     end
 
@@ -44,6 +43,7 @@ module Celluloid
           case monitor.set
           when :wait
             if exited?(process, timeout || 0.1)
+              @monitors.delete(monitor)
               monitor.task.resume
             end
           else
@@ -94,9 +94,14 @@ class Demo
   include Celluloid::Exec
 
   def initialize
-    process = ChildProcess.build("ruby", "-e", "sleep 2")
-    process.wait
+    @process = ChildProcess.build("ruby", "-e", "sleep 2")
+  end
+
+  def run
+    @process.start
+    @process.wait
+    puts "done"
   end
 end
 
-Demo.new
+Demo.new.run
