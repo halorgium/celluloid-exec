@@ -61,6 +61,8 @@ module Celluloid
     end
 
     class ChildProcess
+      extend Forwardable
+
       def self.build(*argv)
         new(*argv)
       end
@@ -68,6 +70,8 @@ module Celluloid
       def initialize(*argv)
         @process = ::ChildProcess.build(*argv)
       end
+
+      def_delegators :@process, :io, :duplex, :duplex=
 
       def evented?
         actor = Thread.current[:celluloid_actor]
@@ -92,15 +96,43 @@ end
 
 class Demo
   include Celluloid::Exec
+  include Celluloid::Logger
 
   def initialize
-    @process = ChildProcess.build("ruby", "-e", "sleep 2")
+    @sleeper = ChildProcess.build("ruby", "-e", "sleep 2")
+    @linereader = ChildProcess.build("ruby", "-e", "p $stdin.gets")
   end
 
   def run
-    @process.start
-    @process.wait
-    puts "done"
+    @sleeper.start
+    @sleeper.wait
+
+    out      = Tempfile.new("duplex")
+    out.sync = true
+
+    @linereader.io.stdout = @linereader.io.stderr = out
+    @linereader.duplex = true
+    @linereader.start
+
+    info "-> puts"
+    @linereader.io.stdin.puts "hello world"
+    info "-> close"
+    @linereader.io.stdin.close
+    info "-> wait"
+    @linereader.wait
+
+    info "-> rewind"
+    out.rewind
+    info "-> readpartial"
+    begin
+      loop {
+        data = out.readpartial(8192)
+        info "data: #{data.inspect}"
+      }
+    rescue EOFError
+    end
+
+    info "done"
   end
 end
 
